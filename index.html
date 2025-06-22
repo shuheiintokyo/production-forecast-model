@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Production Forecast Model</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .sheet-section {
+            margin-bottom: 40px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        .sheet-header {
+            background-color: #3498db;
+            color: white;
+            padding: 15px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .sheet-content {
+            padding: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: center;
+        }
+        th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+        }
+        .product-upper { background-color: #e8f5e8; }
+        .product-middle { background-color: #fff2e8; }
+        .product-lower { background-color: #e8e8f5; }
+        .controls {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+        button {
+            background-color: #27ae60;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background-color: #219a52;
+        }
+        .download-btn {
+            background-color: #e74c3c;
+        }
+        .download-btn:hover {
+            background-color: #c0392b;
+        }
+        .note {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+        .editable {
+            background-color: #fff;
+            border: 1px solid #007bff;
+        }
+        .calculated {
+            background-color: #f0f0f0;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Production Forecast Model</h1>
+        
+        <div class="controls">
+            <div style="margin-bottom: 15px;">
+                <label for="currentMonthSelect" style="display: block; margin-bottom: 5px; font-weight: bold;">Current Month:</label>
+                <select id="currentMonthSelect" onchange="setCurrentMonth(this.value)" style="margin-bottom: 10px; padding: 5px;">
+                    <option value="0">January</option>
+                    <option value="1">February</option>
+                    <option value="2">March</option>
+                    <option value="3">April</option>
+                    <option value="4">May</option>
+                    <option value="5">June</option>
+                    <option value="6">July</option>
+                    <option value="7">August</option>
+                </select>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label for="fileInput" style="display: block; margin-bottom: 5px; font-weight: bold;">Upload Excel File:</label>
+                <input type="file" id="fileInput" accept=".xlsx,.xls" style="margin-bottom: 10px;" />
+                <button onclick="loadFromFile()">Load Configuration & Forecast</button>
+            </div>
+            <button onclick="calculateAll()">Calculate All Schedules</button>
+            <button onclick="saveData()">Save Data</button>
+            <button onclick="resetData()">Reset All Data</button>
+            <button onclick="downloadExcel()" class="download-btn">Download Excel File</button>
+            <div style="margin-top: 10px; font-size: 12px; color: #666;">
+                <strong>Expected Excel format:</strong><br>
+                - Sheet 1: "Product Lineup" with columns: Product Name, Product Weight, Material, Production Lead Time<br>
+                - Sheet 2: "ClientForcast" with 6 months of forecast data<br>
+                <strong>Timing Rules:</strong><br>
+                - Forecast: Need at beginning of month (must be ready in previous month)<br>
+                - Material Order: Delivered next month, production starts month after that<br>
+                - Production: Added to inventory at end of month<br>
+                - Inventory: Shows end-of-month amounts
+            </div>
+        </div>
+
+        <!-- Product Lineup -->
+        <div class="sheet-section">
+            <div class="sheet-header">1. Product Lineup</div>
+            <div class="sheet-content">
+                <table id="productLineup">
+                    <thead>
+                        <tr>
+                            <th>Product Name</th>
+                            <th>Product Weight</th>
+                            <th>Material</th>
+                            <th>Production Lead Time (units/month)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="product-upper">
+                            <td>Upper</td>
+                            <td>100g</td>
+                            <td>ABS</td>
+                            <td class="editable" contenteditable="true" data-product="Upper" data-field="leadTime">30</td>
+                        </tr>
+                        <tr class="product-middle">
+                            <td>Middle</td>
+                            <td>200g</td>
+                            <td>ABS</td>
+                            <td class="editable" contenteditable="true" data-product="Middle" data-field="leadTime">30</td>
+                        </tr>
+                        <tr class="product-lower">
+                            <td>Lower</td>
+                            <td>300g</td>
+                            <td>POM</td>
+                            <td class="editable" contenteditable="true" data-product="Lower" data-field="leadTime">20</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Client Forecast -->
+        <div class="sheet-section">
+            <div class="sheet-header">2. Client Forecast</div>
+            <div class="sheet-content">
+                <div class="note">
+                    <strong>Note:</strong> Products must be ready in inventory the month before delivery to client.
+                </div>
+                <table id="clientForecast">
+                    <thead>
+                        <tr>
+                            <th>Product</th>
+                            <th>Jan</th>
+                            <th>Feb</th>
+                            <th>Mar</th>
+                            <th>Apr</th>
+                            <th>May</th>
+                            <th>Jun</th>
+                            <th>Jul</th>
+                            <th>Aug</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="product-upper">
+                            <td>Upper</td>
+                            <td class="editable" contenteditable="true">0</td>
+                            <td class="editable" contenteditable="true">0</td>
+                            <td class="editable" contenteditable="true">0</td>
+                            <td class="editable" contenteditable="true">20</td>
+                            <td class="editable" contenteditable="true">50</td>
+                            <td class="editable" contenteditable="true">0</td>
+                            <td class="editable" contenteditable="true">0</td>
+                            <td class="editable" contenteditable="true">0</td>
+                        </tr>
+                        <tr class="product-middle">
+                            <td>Middle</td>
+                            <td class="editable" contenteditable="true">0</td>
+                            <td class="editable" contenteditable="true">0</td>
+                            <td class="editable" contenteditable="true">0</td>
+                            <td class="editable" contenteditable="true">10</td>
+                            <td class="editable" contenteditable="true">50</td>
+                            <td class="editable" contenteditable="true">0</td>
+                            <td class="editable" contenteditable="true">0</td>
+                            <td class="editable" contenteditable="true">0</td>
+                        </tr>
+                        <tr class="product-lower">
+                            <td>Lower</td>
+                            <td class="editable" contenteditable="true">0</td>
+                            <td class="editable" contenteditable="true">0</td>
+                            <td class="editable" contenteditable="true">0</td>
+                            <td class="editable" contenteditable="true">30</td>
+                            <td class="editable" contenteditable="true">0</td>
+                            <td class="editable" contenteditable="true">80</td>
+                            <td class="editable" contenteditable="true">0</td>
+                            <td class="editable" contenteditable="true">0</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Factory Line Schedule -->
+        <div class="sheet-section">
+            <div class="sheet-header">3. Factory Line Schedule</div>
+            <div class="sheet-content">
+                <div class="note">
+                    <strong>Calculation:</strong> Based on client forecast shifted by one month and production capacity constraints.
+                </div>
+                <table id="factorySchedule">
+                    <thead>
+                        <tr>
+                            <th>Product</th>
+                            <th>Jan</th>
+                            <th>Feb</th>
+                            <th>Mar</th>
+                            <th>Apr</th>
+                            <th>May</th>
+                            <th>Jun</th>
+                            <th>Jul</th>
+                            <th>Aug</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="product-upper">
+                            <td>Upper</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">20</td>
+                            <td class="calculated">30</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">0</td>
+                        </tr>
+                        <tr class="product-middle">
+                            <td>Middle</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">10</td>
+                            <td class="calculated">30</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">0</td>
+                        </tr>
+                        <tr class="product-lower">
+                            <td>Lower</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">20</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">20</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">0</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Material Order Schedule -->
+        <div class="sheet-section">
+            <div class="sheet-header">4. Material Order Schedule</div>
+            <div class="sheet-content">
+                <div class="note">
+                    <strong>Note:</strong> Material orders take 2 months to be ready for production. Orders placed in January arrive in March.
+                </div>
+                <table id="materialOrder">
+                    <thead>
+                        <tr>
+                            <th>Material</th>
+                            <th>Jan</th>
+                            <th>Feb</th>
+                            <th>Mar</th>
+                            <th>Apr</th>
+                            <th>May</th>
+                            <th>Jun</th>
+                            <th>Jul</th>
+                            <th>Aug</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>ABS (kg)</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">9</td>
+                            <td class="calculated">18</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">0</td>
+                        </tr>
+                        <tr>
+                            <td>POM (kg)</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">6</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">6</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">0</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Product Inventory -->
+        <div class="sheet-section">
+            <div class="sheet-header">5. Product Inventory</div>
+            <div class="sheet-content">
+                <div class="note">
+                    <strong>Calculation:</strong> Previous month inventory + Production - Client deliveries
+                </div>
+                <table id="productInventory">
+                    <thead>
+                        <tr>
+                            <th>Product</th>
+                            <th>Jan</th>
+                            <th>Feb</th>
+                            <th>Mar</th>
+                            <th>Apr</th>
+                            <th>May</th>
+                            <th>Jun</th>
+                            <th>Jul</th>
+                            <th>Aug</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="product-upper">
+                            <td>Upper</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">20</td>
+                            <td class="calculated">30</td>
+                            <td class="calculated">30</td>
+                            <td class="calculated">30</td>
+                            <td class="calculated">30</td>
+                            <td class="calculated">30</td>
+                        </tr>
+                        <tr class="product-middle">
+                            <td>Middle</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">10</td>
+                            <td class="calculated">30</td>
+                            <td class="calculated">30</td>
+                            <td class="calculated">30</td>
+                            <td class="calculated">30</td>
+                            <td class="calculated">30</td>
+                        </tr>
+                        <tr class="product-lower">
+                            <td>Lower</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">20</td>
+                            <td class="calculated">-10</td>
+                            <td class="calculated">10</td>
+                            <td class="calculated">-70</td>
+                            <td class="calculated">-70</td>
+                            <td class="calculated">-70</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Material Inventory -->
+        <div class="sheet-section">
+            <div class="sheet-header">6. Material Inventory</div>
+            <div class="sheet-content">
+                <div class="note">
+                    <strong>Calculation:</strong> Previous month inventory + Material deliveries - Material used in production
+                </div>
+                <table id="materialInventory">
+                    <thead>
+                        <tr>
+                            <th>Material</th>
+                            <th>Jan</th>
+                            <th>Feb</th>
+                            <th>Mar</th>
+                            <th>Apr</th>
+                            <th>May</th>
+                            <th>Jun</th>
+                            <th>Jul</th>
+                            <th>Aug</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>ABS (kg)</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">9</td>
+                            <td class="calculated">24</td>
+                            <td class="calculated">6</td>
+                            <td class="calculated">6</td>
+                            <td class="calculated">6</td>
+                            <td class="calculated">6</td>
+                            <td class="calculated">6</td>
+                        </tr>
+                        <tr>
+                            <td>POM (kg)</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">6</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">6</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">0</td>
+                            <td class="calculated">0</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Data structure to hold all the model data
+        const modelData = {
+            products: {
+                'Upper': { weight: 100, material: 'ABS', leadTime: 30 },
+                'Middle': { weight: 200, material: 'ABS', leadTime: 30 },
+                'Lower': { weight: 300, material: 'POM', leadTime: 20 }
+            },
+            months: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
+            clientForecast: {
+                'Upper': [0, 0, 0, 20, 50, 0, 0, 0],
+                'Middle': [0, 0, 0, 10, 50, 0, 0, 0],
+                'Lower': [0, 0, 0, 30, 0, 80, 0, 0]
+            },
+            // Starting inventory (persistent data)
+            startingInventory: {
+                products: {},
+                materials: {}
+            },
+            currentMonth: 0 // 0=Jan, 1=Feb, etc.
+        };
+
+        // Load data from localStorage on page load
+        function loadPersistedData() {
+            const saved = localStorage.getItem('productionForecastData');
+            if (saved) {
+                try {
+                    const savedData = JSON.parse(saved);
+                    Object.assign(modelData, savedData);
+                    updateAllTables();
+                } catch (e) {
+                    console.error('Error loading saved data:', e);
+                }
+            }
+        }
+
+        // Save data to localStorage
+        function saveData() {
+            localStorage.setItem('productionForecastData', JSON.stringify(modelData));
+        }
+
+        // Set current month and update starting inventory
+        function setCurrentMonth(monthIndex) {
+            modelData.currentMonth = monthIndex;
+            
+            // Update starting inventory based on previous month's ending inventory
+            if (monthIndex > 0) {
+                // Get previous month's inventory from calculations
+                const prevProductInventory = calculateProductInventoryForMonth(monthIndex - 1);
+                const prevMaterialInventory = calculateMaterialInventoryForMonth(monthIndex - 1);
+                
+                modelData.startingInventory.products = prevProductInventory;
+                modelData.startingInventory.materials = prevMaterialInventory;
+            }
+            
+            saveData();
+            calculateAll();
+        }
+
+        // Load data from uploaded Excel file
+        async function loadFromFile() {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('Please select an Excel file first.');
+                return;
+            }
+            
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const workbook = XLSX.read(arrayBuffer, {
+                    cellStyles: true,
+                    cellFormulas: true,
+                    cellDates: true,
+                    cellNF: true,
+                    sheetStubs: true
+                });
+                
+                // Load Product Lineup
+                if (workbook.SheetNames.includes('Product Lineup')) {
+                    const productSheet = workbook.Sheets['Product Lineup'];
+                    const productData = XLSX.utils.sheet_to_json(productSheet, {header: 1});
+                    
+                    // Clear existing products
+                    modelData.products = {};
+                    
+                    // Parse product data (starting from row 3, index 2)
+                    for (let i = 2; i < productData.length; i++) {
+                        const row = productData[i];
+                        if (row && row[0] && row[1] && row[2] && row[3]) {
+                            const productName = row[0];
+                            const weightStr = row[1].toString();
+                            const weight = parseInt(weightStr.replace(/[^0-9]/g, ''));
+                            const material = row[2];
+                            const leadTime = parseInt(row[3]);
+                            
+                            modelData.products[productName] = {
+                                weight: weight,
+                                material: material,
+                                leadTime: leadTime
+                            };
+                        }
+                    }
+                }
+                
+                // Load Client Forecast
+                if (workbook.SheetNames.includes('ClientForcast')) {
+                    const forecastSheet = workbook.Sheets['ClientForcast'];
+                    const forecastData = XLSX.utils.sheet_to_json(forecastSheet, {header: 1});
+                    
+                    // Clear existing forecast
+                    modelData.clientForecast = {};
+                    
+                    // Parse forecast data (starting from row 3, index 2)
+                    for (let i = 2; i < forecastData.length; i++) {
+                        const row = forecastData[i];
+                        if (row && row[0] && modelData.products[row[0]]) {
+                            const productName = row[0];
+                            const forecast = [];
+                            
+                            // Extract 6 months of data, pad with zeros for 8 months total
+                            for (let j = 1; j <= 6; j++) {
+                                forecast.push(parseInt(row[j]) || 0);
+                            }
+                            // Add two more months with zeros
+                            forecast.push(0, 0);
+                            
+                            modelData.clientForecast[productName] = forecast;
+                        }
+                    }
+                }
+                
+                // Update the UI with loaded data
+                updateProductLineupTable();
+                updateClientForecastTable();
+                calculateAll();
+                
+                alert('File loaded successfully!');
+                
+            } catch (error) {
+                console.error('Error loading file:', error);
+                alert('Error loading file. Please check the file format.');
+            }
+        }
+        
+        function updateProductLineupTable() {
+            const table = document.getElementById('productLineup');
+            const tbody = table.querySelector('tbody');
+            tbody.innerHTML = '';
+            
+            Object.keys(modelData.products).forEach((product, index) => {
+                const data = modelData.products[product];
+                const row = document.createElement('tr');
+                row.className = `product-${product.toLowerCase()}`;
+                row.innerHTML = `
+                    <td>${product}</td>
+                    <td>${data.weight}g</td>
+                    <td>${data.material}</td>
+                    <td class="editable" contenteditable="true" data-product="${product}" data-field="leadTime">${data.leadTime}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+        
+        function updateClientForecastTable() {
+            const table = document.getElementById('clientForecast');
+            const tbody = table.querySelector('tbody');
+            tbody.innerHTML = '';
+            
+            Object.keys(modelData.products).forEach((product, index) => {
+                const forecast = modelData.clientForecast[product] || [0,0,0,0,0,0,0,0];
+                const row = document.createElement('tr');
+                row.className = `product-${product.toLowerCase()}`;
+                
+                let cells = `<td>${product}</td>`;
+                forecast.forEach(value => {
+                    cells += `<td class="editable" contenteditable="true">${value}</td>`;
+                });
+                
+                row.innerHTML = cells;
+                tbody.appendChild(row);
+            });
+        }
+
+        // Update lead times when edited
+        document.addEventListener('input', function(e) {
+            if (e.target.classList.contains('editable')) {
+                const product = e.target.getAttribute('data-product');
+                const field = e.target.getAttribute('data-field');
+                const value = parseInt(e.target.textContent) || 0;
+                
+                if (product && field === 'leadTime') {
+                    modelData.products[product].leadTime = value;
+                    calculateAll();
+                }
+            }
+        });
+
+        // Update client forecast when edited
+        document.addEventListener('input', function(e) {
+            if (e.target.closest('#clientForecast') && e.target.classList.contains('editable')) {
+                updateClientForecastData();
+                calculateAll();
+            }
+        });
+
+        function updateClientForecastData() {
+            const table = document.getElementById('clientForecast');
+            const rows = table.querySelectorAll('tbody tr');
+            
+            rows.forEach((row, index) => {
+                const product = Object.keys(modelData.products)[index];
+                const cells = row.querySelectorAll('.editable');
+                modelData.clientForecast[product] = Array.from(cells).map(cell => 
+                    parseInt(cell.textContent) || 0
+                );
+            });
+        }
+
+        function calculateAll() {
+            updateClientForecastData();
+            calculateFactorySchedule();
+            calculateMaterialOrders();
+            calculateProductInventory();
+            calculateMaterialInventory();
+        }
+
+        function calculateFactorySchedule() {
+            // Step 1: Calculate total demand by material type
+            const materialDemand = { ABS: 0, POM: 0 };
+            const totalDemandByProduct = {};
+            
+            Object.keys(modelData.products).forEach(product => {
+                const forecast = modelData.clientForecast[product] || [0,0,0,0,0,0,0,0];
+                const totalUnits = forecast.reduce((sum, val) => sum + val, 0);
+                totalDemandByProduct[product] = totalUnits;
+                
+                const material = modelData.products[product].material;
+                const weight = modelData.products[product].weight; // in grams
+                materialDemand[material] += totalUnits * weight;
+            });
+            
+            // Step 2: Calculate material orders with minimum quantities
+            const materialOrders = {};
+            Object.keys(materialDemand).forEach(material => {
+                if (materialDemand[material] > 0) {
+                    materialOrders[material] = Math.ceil(materialDemand[material] / 1000 / 25) * 25; // Round up to 25kg bags
+                } else {
+                    materialOrders[material] = 0;
+                }
+            });
+            
+            // Step 3: Calculate optimal production schedule
+            const factorySchedule = {};
+            Object.keys(modelData.products).forEach(product => {
+                factorySchedule[product] = [0, 0, 0, 0, 0, 0, 0, 0];
+            });
+            
+            // Group products by material and calculate production schedules
+            const materialGroups = {};
+            Object.keys(modelData.products).forEach(product => {
+                const material = modelData.products[product].material;
+                if (!materialGroups[material]) {
+                    materialGroups[material] = [];
+                }
+                materialGroups[material].push(product);
+            });
+            
+            // For each material group, calculate production starting from March (when material arrives)
+            Object.keys(materialGroups).forEach(material => {
+                if (materialOrders[material] > 0) {
+                    const products = materialGroups[material];
+                    const productDemands = products.map(product => ({
+                        name: product,
+                        demand: totalDemandByProduct[product],
+                        capacity: modelData.products[product].leadTime
+                    }));
+                    
+                    // Start production in March (month index 2)
+                    for (let month = 2; month < 8; month++) {
+                        productDemands.forEach(productInfo => {
+                            if (productInfo.demand > 0) {
+                                const produce = Math.min(productInfo.demand, productInfo.capacity);
+                                factorySchedule[productInfo.name][month] = produce;
+                                productInfo.demand -= produce;
+                            }
+                        });
+                        
+                        // Check if all demands are satisfied
+                        if (productDemands.every(p => p.demand <= 0)) break;
+                    }
+                }
+            });
+
+            // Update the factory schedule table
+            updateFactoryScheduleTable(factorySchedule);
+            
+            // Store for other calculations
+            window.calculatedFactorySchedule = factorySchedule;
+            window.calculatedMaterialOrders = materialOrders;
+        }
+        
+        function updateFactoryScheduleTable(factorySchedule) {
+            const table = document.getElementById('factorySchedule');
+            const tbody = table.querySelector('tbody');
+            tbody.innerHTML = '';
+            
+            Object.keys(modelData.products).forEach(product => {
+                const row = document.createElement('tr');
+                row.className = `product-${product.toLowerCase()}`;
+                
+                let cells = `<td>${product}</td>`;
+                factorySchedule[product].forEach(value => {
+                    cells += `<td class="calculated">${value}</td>`;
+                });
+                
+                row.innerHTML = cells;
+                tbody.appendChild(row);
+            });
+        }
+
+        function calculateMaterialOrders() {
+            // Use the calculated material orders from factory schedule
+            const materialOrders = window.calculatedMaterialOrders || {};
+            
+            // Get unique materials from products
+            const materials = [...new Set(Object.values(modelData.products).map(p => p.material))];
+            
+            // Material is ordered in current month, delivered next month, production starts month after delivery
+            const orderSchedule = {};
+            materials.forEach(material => {
+                orderSchedule[material] = [0, 0, 0, 0, 0, 0, 0, 0];
+                // Place order at current month for future production
+                if (materialOrders[material] > 0) {
+                    orderSchedule[material][modelData.currentMonth] = materialOrders[material];
+                }
+            });
+
+            // Update the table
+            const table = document.getElementById('materialOrder');
+            const tbody = table.querySelector('tbody');
+            tbody.innerHTML = '';
+            
+            materials.forEach(material => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${material} (kg)</td>
+                    ${orderSchedule[material].map(value => `<td class="calculated">${value}</td>`).join('')}
+                `;
+                tbody.appendChild(row);
+            });
+            
+            // Store for inventory calculations
+            window.calculatedMaterialOrderSchedule = orderSchedule;
+        }
+
+        function calculateProductInventory() {
+            const inventory = {};
+            const factorySchedule = window.calculatedFactorySchedule || {};
+
+            // Initialize inventory for all products
+            Object.keys(modelData.products).forEach(product => {
+                // Start with saved inventory or 0
+                const startingAmount = modelData.startingInventory.products[product] || 0;
+                inventory[product] = [startingAmount];
+                
+                for (let month = 1; month < 8; month++) {
+                    const prevInventory = inventory[product][month - 1];
+                    const production = factorySchedule[product] ? factorySchedule[product][month] : 0;
+                    const forecast = modelData.clientForecast[product] || [0,0,0,0,0,0,0,0];
+                    
+                    // Forecast demand is needed at beginning of month, so subtract from previous month's ending inventory
+                    const delivered = forecast[month] || 0;
+                    
+                    inventory[product][month] = prevInventory + production - delivered;
+                }
+            });
+
+            // Update the table
+            const table = document.getElementById('productInventory');
+            const tbody = table.querySelector('tbody');
+            tbody.innerHTML = '';
+            
+            Object.keys(modelData.products).forEach(product => {
+                const row = document.createElement('tr');
+                row.className = `product-${product.toLowerCase()}`;
+                
+                let cells = `<td>${product}</td>`;
+                inventory[product].forEach((value, monthIndex) => {
+                    let cellClass = 'calculated';
+                    let cellStyle = '';
+                    if (value < 0) {
+                        cellStyle = 'background-color: #ffebee; color: #c62828; font-weight: bold;';
+                    }
+                    // Highlight current month
+                    if (monthIndex === modelData.currentMonth) {
+                        cellStyle += 'border: 3px solid #2196F3;';
+                    }
+                    cells += `<td class="${cellClass}" style="${cellStyle}">${value}</td>`;
+                });
+                
+                row.innerHTML = cells;
+                tbody.appendChild(row);
+            });
+        }
+
+        // Helper functions for getting inventory at specific months
+        function calculateProductInventoryForMonth(month) {
+            const result = {};
+            Object.keys(modelData.products).forEach(product => {
+                result[product] = 0; // This would be calculated based on the model
+            });
+            return result;
+        }
+
+        function calculateMaterialInventoryForMonth(month) {
+            const result = {};
+            const materials = [...new Set(Object.values(modelData.products).map(p => p.material))];
+            materials.forEach(material => {
+                result[material] = 0; // This would be calculated based on the model
+            });
+            return result;
+        }
+
+        function resetData() {
+            if (confirm('Are you sure you want to reset all data? This will clear all saved information.')) {
+                localStorage.removeItem('productionForecastData');
+                location.reload();
+            }
+        }
+
+        function updateAllTables() {
+            updateProductLineupTable();
+            updateClientForecastTable();
+            document.getElementById('currentMonthSelect').value = modelData.currentMonth;
+        }
+
+        function calculateMaterialInventory() {
+            const factorySchedule = window.calculatedFactorySchedule || {};
+            const materialOrders = window.calculatedMaterialOrderSchedule || {};
+            
+            // Get unique materials
+            const materials = [...new Set(Object.values(modelData.products).map(p => p.material))];
+            const inventory = {};
+            
+            materials.forEach(material => {
+                // Start with saved inventory or 0
+                const startingAmount = modelData.startingInventory.materials[material] || 0;
+                inventory[material] = [startingAmount];
+                
+                for (let month = 1; month < 8; month++) {
+                    const prevInventory = inventory[material][month - 1];
+                    
+                    // Material delivered (ordered previous month, delivered this month)
+                    let delivered = 0;
+                    if (month > 0 && materialOrders[material]) {
+                        delivered = materialOrders[material][month - 1] || 0;
+                    }
+                    
+                    // Calculate material used this month (production can only start month after delivery)
+                    let materialUsed = 0;
+                    if (month >= 2) { // Can only produce if material was delivered at least previous month
+                        Object.keys(modelData.products).forEach(product => {
+                            if (modelData.products[product].material === material) {
+                                const weight = modelData.products[product].weight / 1000; // Convert g to kg
+                                const produced = factorySchedule[product] ? factorySchedule[product][month] : 0;
+                                materialUsed += produced * weight;
+                            }
+                        });
+                    }
+                    
+                    inventory[material][month] = prevInventory + delivered - materialUsed;
+                }
+            });
+
+            // Update the table
+            const table = document.getElementById('materialInventory');
+            const tbody = table.querySelector('tbody');
+            tbody.innerHTML = '';
+            
+            materials.forEach(material => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${material} (kg)</td>
+                    ${inventory[material].map(value => `<td class="calculated">${Math.round(value * 10) / 10}</td>`).join('')}
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function downloadExcel() {
+            const wb = XLSX.utils.book_new();
+            
+            // Create Product Lineup sheet
+            const productData = [
+                ['Product line up and its material and the weight of the product for production.'],
+                ['Product Name', 'Product Weight', 'Material', 'Production Lead Time (units/month)'],
+                ['Upper', '100g', 'ABS', modelData.products.Upper.leadTime],
+                ['Middle', '200g', 'ABS', modelData.products.Middle.leadTime],
+                ['Lower', '300g', 'POM', modelData.products.Lower.leadTime]
+            ];
+            const ws1 = XLSX.utils.aoa_to_sheet(productData);
+            XLSX.utils.book_append_sheet(wb, ws1, 'Product Lineup');
+            
+            // Create Client Forecast sheet
+            const forecastData = [
+                ['Client Forecast for Delivery Due Date'],
+                ['', ...modelData.months],
+                ['Upper', ...modelData.clientForecast.Upper],
+                ['Middle', ...modelData.clientForecast.Middle],
+                ['Lower', ...modelData.clientForecast.Lower]
+            ];
+            const ws2 = XLSX.utils.aoa_to_sheet(forecastData);
+            XLSX.utils.book_append_sheet(wb, ws2, 'ClientForecast');
+            
+            // Get calculated data from tables and create other sheets
+            const factoryData = getTableData('factorySchedule', 'Factory Line Schedule');
+            const ws3 = XLSX.utils.aoa_to_sheet(factoryData);
+            XLSX.utils.book_append_sheet(wb, ws3, 'FactoryLineSchedule');
+            
+            const materialOrderData = getTableData('materialOrder', 'Material Order Schedule');
+            const ws4 = XLSX.utils.aoa_to_sheet(materialOrderData);
+            XLSX.utils.book_append_sheet(wb, ws4, 'MaterialOrderSchedule');
+            
+            const productInvData = getTableData('productInventory', 'Product Inventory');
+            const ws5 = XLSX.utils.aoa_to_sheet(productInvData);
+            XLSX.utils.book_append_sheet(wb, ws5, 'ProductInventory');
+            
+            const materialInvData = getTableData('materialInventory', 'Material Inventory');
+            const ws6 = XLSX.utils.aoa_to_sheet(materialInvData);
+            XLSX.utils.book_append_sheet(wb, ws6, 'MaterialInventory');
+            
+            // Download the file
+            XLSX.writeFile(wb, 'ProductForecast_Updated.xlsx');
+        }
+        
+        function getTableData(tableId, title) {
+            const table = document.getElementById(tableId);
+            const rows = table.querySelectorAll('tr');
+            const data = [[title]];
+            
+            rows.forEach(row => {
+                const cells = row.querySelectorAll('th, td');
+                const rowData = Array.from(cells).map(cell => {
+                    const text = cell.textContent.trim();
+                    return isNaN(text) || text === '' ? text : parseFloat(text);
+                });
+                data.push(rowData);
+            });
+            
+            return data;
+        }
+
+        // Initialize calculations on page load
+        window.addEventListener('load', function() {
+            loadPersistedData();
+            calculateAll();
+        });
+
+        // Auto-save when data changes
+        document.addEventListener('input', function(e) {
+            if (e.target.classList.contains('editable')) {
+                setTimeout(() => {
+                    saveData();
+                }, 500); // Save after 500ms delay
+            }
+        });
+    </script>
+</body>
+</html>
